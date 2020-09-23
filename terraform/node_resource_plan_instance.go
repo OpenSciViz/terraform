@@ -16,6 +16,7 @@ import (
 type NodePlannableResourceInstance struct {
 	*NodeAbstractResourceInstance
 	ForceCreateBeforeDestroy bool
+	skipRefresh              bool
 }
 
 var (
@@ -134,33 +135,42 @@ func (n *NodePlannableResourceInstance) evalTreeManagedResource(addr addrs.AbsRe
 				ProviderSchema: &providerSchema,
 			},
 
-			// Refresh the instance
-			&EvalReadState{
-				Addr:           addr.Resource,
-				Provider:       &provider,
-				ProviderSchema: &providerSchema,
-				Output:         &instanceRefreshState,
-			},
-			&EvalRefreshDependencies{
-				State:        &instanceRefreshState,
-				Dependencies: &n.Dependencies,
-			},
-			&EvalRefresh{
-				Addr:           addr.Resource,
-				ProviderAddr:   n.ResolvedProvider,
-				Provider:       &provider,
-				ProviderMetas:  n.ProviderMetas,
-				ProviderSchema: &providerSchema,
-				State:          &instanceRefreshState,
-				Output:         &instanceRefreshState,
-			},
-			&EvalWriteState{
-				Addr:           addr.Resource,
-				ProviderAddr:   n.ResolvedProvider,
-				State:          &instanceRefreshState,
-				ProviderSchema: &providerSchema,
-				targetState:    refreshState,
-				Dependencies:   &n.Dependencies,
+			&EvalIf{
+				If: func(ctx EvalContext) (bool, error) {
+					return !n.skipRefresh, nil
+				},
+				Then: &EvalSequence{
+					Nodes: []EvalNode{
+						// Refresh the instance
+						&EvalReadState{
+							Addr:           addr.Resource,
+							Provider:       &provider,
+							ProviderSchema: &providerSchema,
+							Output:         &instanceRefreshState,
+						},
+						&EvalRefreshDependencies{
+							State:        &instanceRefreshState,
+							Dependencies: &n.Dependencies,
+						},
+						&EvalRefresh{
+							Addr:           addr.Resource,
+							ProviderAddr:   n.ResolvedProvider,
+							Provider:       &provider,
+							ProviderMetas:  n.ProviderMetas,
+							ProviderSchema: &providerSchema,
+							State:          &instanceRefreshState,
+							Output:         &instanceRefreshState,
+						},
+						&EvalWriteState{
+							Addr:           addr.Resource,
+							ProviderAddr:   n.ResolvedProvider,
+							State:          &instanceRefreshState,
+							ProviderSchema: &providerSchema,
+							targetState:    refreshState,
+							Dependencies:   &n.Dependencies,
+						},
+					},
+				},
 			},
 
 			// Plan the instance
